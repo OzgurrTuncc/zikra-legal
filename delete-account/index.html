@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Zikra — Hesabımı Sil</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    max-width: 480px; margin: 0 auto; padding: 32px 20px;
+    background: #0f0f0f; color: #f5f5dc;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 4px; }
+  p.subtitle { color: #f5f5dc99; font-size: 0.9rem; margin-top: 0; }
+  .card {
+    background: #1a1a1a; border-radius: 12px; padding: 20px; margin-top: 20px;
+    border: 1px solid #fbbf2422;
+  }
+  ul { padding-left: 20px; line-height: 1.7; }
+  label { display: block; margin: 16px 0 6px; font-size: 0.9rem; }
+  input {
+    width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 8px;
+    border: 1px solid #444; background: #0f0f0f; color: #f5f5dc; font-size: 1rem;
+  }
+  button {
+    width: 100%; margin-top: 18px; padding: 12px; border-radius: 8px; border: none;
+    font-size: 1rem; font-weight: 600; cursor: pointer;
+  }
+  button.primary { background: #fbbf24; color: #1a1a1a; }
+  button.danger { background: #dc2626; color: #fff; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .message { margin-top: 16px; font-size: 0.9rem; }
+  .message.error { color: #f87171; }
+  .message.success { color: #4ade80; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+  <h1>Hesabımı Sil</h1>
+  <p class="subtitle">This page lets you permanently request deletion of your Zikra account and all associated data.</p>
+
+  <div id="request-view" class="card">
+    <p>Hesabını silmek için kayıtlı e-posta adresini gir, sana bir onay bağlantısı gönderelim.</p>
+    <label for="email">E-posta</label>
+    <input id="email" type="email" placeholder="ornek@eposta.com" autocomplete="email" />
+    <button id="request-btn" class="primary">Bağlantı Gönder</button>
+    <div id="request-message" class="message hidden"></div>
+  </div>
+
+  <div id="confirm-view" class="card hidden">
+    <p><strong>Bu işlem geri alınamaz.</strong> Hesabın silindiğinde aşağıdakiler kalıcı olarak kaldırılır:</p>
+    <ul>
+      <li>Profilin</li>
+      <li>Bulut senkronizasyonu</li>
+      <li>Namaz kayıtların</li>
+      <li>Hatim kayıtların</li>
+      <li>Kazâ kayıtların</li>
+    </ul>
+    <p>Onaylamak için aşağıya <strong>HESABIMI SİL</strong> yaz.</p>
+    <label for="confirm-input">Onay</label>
+    <input id="confirm-input" type="text" autocomplete="off" />
+    <button id="confirm-btn" class="danger" disabled>Hesabımı Kalıcı Olarak Sil</button>
+    <div id="confirm-message" class="message hidden"></div>
+  </div>
+
+  <script>
+    const DELETE_URL = "https://xiqqxsllqysiixmgszjz.supabase.co/functions/v1/delete-account";
+    const CONFIRM_PHRASE = "HESABIMI SİL";
+
+    const requestView = document.getElementById("request-view");
+    const confirmView = document.getElementById("confirm-view");
+
+    function showMessage(el, text, kind) {
+      el.textContent = text;
+      el.className = "message " + kind;
+    }
+
+    const hashParams = new URLSearchParams(location.hash.replace(/^#/, ""));
+    const accessToken = hashParams.get("access_token");
+
+    if (accessToken) {
+      requestView.classList.add("hidden");
+      confirmView.classList.remove("hidden");
+      history.replaceState(null, "", location.pathname);
+
+      const confirmInput = document.getElementById("confirm-input");
+      const confirmBtn = document.getElementById("confirm-btn");
+      const confirmMessage = document.getElementById("confirm-message");
+
+      confirmInput.addEventListener("input", () => {
+        confirmBtn.disabled = confirmInput.value.trim().toUpperCase() !== CONFIRM_PHRASE;
+      });
+
+      confirmBtn.addEventListener("click", async () => {
+        confirmBtn.disabled = true;
+        confirmMessage.classList.add("hidden");
+        try {
+          const res = await fetch(DELETE_URL, {
+            method: "POST",
+            headers: { Authorization: "Bearer " + accessToken },
+          });
+          const data = await res.json();
+          if (data.ok) {
+            confirmView.innerHTML =
+              '<p><strong>Hesabınız kalıcı olarak silindi.</strong></p>' +
+              '<p>Tüm kişisel verileriniz kaldırıldı. Zikra\'yı kullandığınız için teşekkür ederiz.</p>';
+          } else {
+            const isExpired = data.error === "session_stale" || data.error === "invalid_session";
+            showMessage(
+              confirmMessage,
+              isExpired
+                ? "Bağlantının süresi doldu. Yeni silme bağlantısı isteyin."
+                : "Bir şeyler ters gitti, lütfen tekrar dene.",
+              "error",
+            );
+            confirmMessage.classList.remove("hidden");
+            confirmBtn.disabled = false;
+          }
+        } catch {
+          showMessage(confirmMessage, "Bağlantı hatası, lütfen tekrar dene.", "error");
+          confirmMessage.classList.remove("hidden");
+          confirmBtn.disabled = false;
+        }
+      });
+    } else {
+      const emailInput = document.getElementById("email");
+      const requestBtn = document.getElementById("request-btn");
+      const requestMessage = document.getElementById("request-message");
+
+      requestBtn.addEventListener("click", async () => {
+        const email = emailInput.value.trim();
+        requestBtn.disabled = true;
+        try {
+          await fetch(DELETE_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email }),
+          });
+        } catch {
+          // yut — aşağıdaki jenerik mesaj her durumda gösterilir.
+        }
+        showMessage(
+          requestMessage,
+          "Bu e-posta ile bir hesap varsa, silme bağlantısı gönderildi. Gelen kutunu kontrol et.",
+          "success",
+        );
+        requestMessage.classList.remove("hidden");
+        requestBtn.disabled = false;
+      });
+    }
+  </script>
+</body>
+</html>
